@@ -9,7 +9,7 @@ import sqlite3
 _DATABASE_ = "data/user.db"
 _LOGIN_OPTION_ = 1
 _REGISTER_OPTION_ = 2
-_QUIT_OPTION_= 3
+_QUIT_OPTION_ = 3
 
 
 class Login():
@@ -28,57 +28,154 @@ class Login():
                     "Password_Encrypted"	TEXT);
                     ''')
 
+        self.cursor.execute('''CREATE TABLE  IF NOT EXISTS LoginHistory (
+                            "UserHistoryId"	INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,
+                            "UserId"	INTEGER NOT NULL,
+                            "LoginTime"	TEXT NOT NULL
+                            ,FOREIGN KEY (UserId) REFERENCES USER(UserId)
+                            );
+                            ''')
+
         # Save (commit) the changes and close connection
         self.conn.commit()
         self.conn.close()
         self.is_open_connection = False
         return
 
-    def toggle_connection(self, verbose=False):
+    def open_connection(self, verbose=False):
+        if self.is_open_connection:
+            if verbose:
+                print("The database is already open")
+        else:
+            self.conn = sqlite3.connect(self.db)
+            self.cursor = self.conn.cursor()
+            self.is_open_connection = True
+            if verbose:
+                print("The database has been opened")
+        return
+
+    def close_connection(self, verbose=False):
         if self.is_open_connection:
             self.conn.close()
             self.is_open_connection = False
+
+            if verbose:
+                print("The database has been closed")
         else:
-            self.conn.open()
-            self.is_open_connection = True
-        if verbose:
-            status = "opened" if self.is_open_connection else "closed"
-            print(f"The database has been {status}.")
+            if verbose:
+                print("The database is already closed")
+        return
 
-    @staticmethod
-    def prompt_user_input():
+    def login(self):
+        # get username
         username = input("Username:")
-        pwd = input("Password:")
-        # pwd = getpass.getpass(prompt='Password: ', stream=None)
 
+        # check username
+        self.open_connection()
+        check_username = self.cursor.execute(f"SELECT UserName, UserId FROM USER WHERE UserName = '{username}'").fetchone()
+        if check_username is None:
+            print(f'Username {username} does  not exist')
+            self.close_connection()
+            return None, None
+        # get password
+        pwd = input("Password:")
+        # check password:
+        check_password = self.cursor.execute(f"""SELECT Password_Raw 
+                                                 FROM USER WHERE UserName = '{username}'""").fetchone()[0]
+        if check_password == pwd:
+            self.cursor.execute(f"""INSERT INTO LoginHistory (UserId, LoginTime)
+                               VALUES ('{check_username[1]}',DATETIME('now'))""")
+            self.conn.commit()
+            print("Login was successful!\n")
+        else:
+            print("Incorrect Password\n")
+            username = None
+
+        self.close_connection()
         return username, pwd
 
-    def update_db(self):
-        pass
+    def register(self, verbose=False):
+        # get and check username
+        print("Enter a Username (must be at least 5 characters).")
+        username = input("Username:")
+        if len(username) < 5:
+            print("Invalid Username")
+            return None, None
+        elif len(username) >= 5:
+            self.open_connection()
+            check_username = self.cursor.execute(f"SELECT Username FROM USER WHERE Username = '{username}'").fetchone()
+            self.close_connection()
+            if check_username is not None:
+                print(f"Sorry. The Username '{username}' is already taken.")
+                return None, None
+            else:
+                # get and check password
+                print('Create your password. (Passwords must be at least 7 characters)')
+                pwd = input("Password:")
+                if len(pwd) < 7:
+                    print("Invalid Password")
+                    return None, None
+                elif len(pwd) >= 7:
+                    print("Confirm your password")
+                    pwd2 = input("Password:")
+                    if pwd != pwd2:
+                        print("Passwords don't match")
+                        return None, None
+                    else:
+                        self.add_user(username=username, password=pwd)
+                        print("Regristration was successful!")
+                        return username, pwd
 
-    def insert_sample(self):
-        if not self.is_open_connection:
-            self.toggle_connection()
+    def add_user(self, username, password):
+        encrypted_pwd = self.encrypt(password)
+        self.open_connection()
+        self.cursor.execute(f"""INSERT INTO USER (DateJoined, UserName, Password_Raw, Password_Encrypted)
+                               VALUES (DATETIME('now'), '{username}', '{password}','{encrypted_pwd}')""")
+        self.conn.commit()
+        self.close_connection()
+        return
 
-        # Insert a row of data as a test (R.I.P. KOBE)
-        self.cursor.execute("""INSERT INTO USER (DateJoined, UserName, Password_Raw, Password_Encrypted)
-                               VALUES (DATETIME('now'), 'KBryant_24', 'mamba','12345');
-                            """)
-        # close the db
-        self.toggle_connection()
+    def fill_db(self, user_data=None):
+        # fake user data
+        if not user_data:
+            user_data = [
+                ('KBryant_24', 'MVP_2008'),  # R.I.P Kobe
+                ('john_smith', 'hi-im-johnny'),
+                ('robert_johnson', 'VERY SECURE PASSWORD'),
+                ('t_jefferds', 'yogurt'),
+                ('captain_holt', 'i<3kevin')
 
-    def encrypt(self):
-        pass
+            ]
+
+        for username, pwd in user_data:
+            self.open_connection()
+            check_username = self.cursor.execute(f"SELECT Username FROM USER WHERE Username = '{username}'").fetchone()
+            self.close_connection()
+            if check_username is not None:
+                continue
+            else:
+                self.add_user(username=username, password=pwd)
+        return
+
+    @staticmethod
+    def encrypt(text):
+        # TODO: run an encryption algorithm on the password to store in the database
+        return 'encrypted_password'
+    @staticmethod
+    def decrypt(text):
+        # TODO: decrypt the password to ensure credentials are valid
+        return 'decrypted_password'
 
 
 def main():
 
     # initialize Login instance ---------------
     login = Login(database=_DATABASE_)
+    login.fill_db()
 
     # Main Menu ------------------
     while True:
-        print("Main Menu -------------------------------")
+        print("\nMain Menu -------------------------------")
         option = input("""Please enter:
          '1' to Login
          '2' to Register
@@ -86,25 +183,31 @@ def main():
         try:
             option = int(option)
         except:
-            pass
+            option = -1  # invalid input
         if option == _QUIT_OPTION_:
             print("Quitting the program.")
             return
         elif option not in [1, 2]:
             print("Invalid Selection. Please try again.")
-        else:
-            break
+            continue
+        elif option == _LOGIN_OPTION_:
+            print("Enter your Username and Password to login.")
+            username, pwd = login.login()
+            if username is None:
+                continue
+        elif option == _REGISTER_OPTION_:
+            print("To Register, enter in your desired Username then password.")
+            username, pwd = login.register(True)
+            if username is None:
+                continue
 
-    if option == _LOGIN_OPTION_:
-        print("Enter your Username and Password to login.")
-    elif option == _REGISTER_OPTION_:
-        print("To Register, enter in your desired Username then password.")
+        break
 
     # login or register ----------------------------
-    username, pwd = login.prompt_user_input()
-
+    # username, pwd = login.prompt_user_input()
+    #
     print(f"Username: {username}, Password: {pwd}")
-
+    login.conn.close()
     return
 
 
