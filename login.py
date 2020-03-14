@@ -78,7 +78,8 @@ class Login():
             self.close_connection()
             return None, None
         # get password
-        pwd = input("Password:")
+        # pwd = input("Password:")
+        pwd = getpass.getpass()
         # check password:
         check_password = self.cursor.execute(f"""SELECT Password_Raw 
                                                  FROM USER WHERE UserName = '{username}'""").fetchone()[0]
